@@ -116,7 +116,7 @@ def next_hint(points: int, rewards: list) -> str:
 
 # ============== App ==============
 def main():
-    st.set_page_config(page_title="集點計分器＋報到QR", page_icon="🔢", layout="wide")
+    st.set_page_config(page_title="活動參與集點", page_icon="🔢", layout="wide")
 
     # 左側設定面板（可拉開）
     st.sidebar.title("⚙️ 設定")
@@ -158,7 +158,7 @@ def main():
     df_logs = load_logs(csv_path)
 
     # 主頁頂部導覽（主控分頁）
-    st.markdown("<h1 style='margin-bottom:4px'>🔢參與活動集點</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='margin-bottom:4px'> 🔢活動參與集點 </h1>", unsafe_allow_html=True)
     nav = st.radio(
         "頁面導覽",
         ["📱 產生 QRcode", "📝 現場報到", "📅 依日期查看參與者", "👤 個人明細", "📒 完整記錄", "🏆 排行榜"],
@@ -230,4 +230,54 @@ def main():
                         })
                 if new_rows:
                     append_rows(csv_path, new_rows)
-                    st.success(f"✅ 已報到 {len(new_rows)} 人：{ '、'.join(_
+                    st.success(f"✅ 已報到 {len(new_rows)} 人：{ '、'.join([r['姓名'] for r in new_rows]) }")
+                if duplicated_list:
+                    st.warning(f"已報到過：{ '、'.join(duplicated_list) }（同活動/日期/類別）")
+
+    # --------- 📅 依日期查看參與者 ---------
+    elif nav == "📅 依日期查看參與者":
+        st.subheader("依日期查看參與者")
+        df = df_logs.copy()
+        c1, c2, c3 = st.columns(3)
+        d = c1.date_input("活動日期", value=None, format="YYYY/MM/DD")
+        cat = c2.selectbox("類別", ["全部"] + list(CATEGORY_POINTS.keys()))
+        kw  = c3.text_input("活動標題關鍵字", placeholder="可留空")
+        if d: df = df[df["活動日期"] == d.isoformat()]
+        if cat != "全部": df = df[df["類別"] == cat]
+        if kw.strip(): df = df[df["活動名稱"].str.contains(kw.strip(), na=False)]
+        st.dataframe(df.sort_values("時間", ascending=False), use_container_width=True)
+
+    # --------- 👤 個人明細 ---------
+    elif nav == "👤 個人明細":
+        st.subheader("個人明細")
+        qn = st.text_input("查詢姓名")
+        if qn:
+            who = clean_names(qn)[0] if clean_names(qn) else ""
+            df = df_logs[df_logs["姓名"]==who].copy()
+            df["_dt"] = pd.to_datetime(df["時間"], errors="coerce")
+            c1, c2 = st.columns(2)
+            d1 = c1.date_input("起始日期", value=None)
+            d2 = c2.date_input("結束日期（含當天）", value=None)
+            if d1: df = df[df["_dt"] >= pd.to_datetime(d1)]
+            if d2: df = df[df["_dt"] < pd.to_datetime(d2) + timedelta(days=1)]
+            pts = int(df["獲得點數"].sum()) if not df.empty else 0
+            st.info(f"👤 {who} 累積：**{pts}** 點")
+            st.caption(reward_text(pts, REWARDS_LIST))
+            st.caption(next_hint(pts, REWARDS_LIST))
+            if not df.empty:
+                st.dataframe(df.drop(columns=["_dt"]).sort_values("時間", ascending=False), use_container_width=True)
+
+    # --------- 📒 完整記錄 ---------
+    elif nav == "📒 完整記錄":
+        st.subheader("完整記錄")
+        st.dataframe(df_logs.sort_values("時間", ascending=False), use_container_width=True)
+        st.download_button("下載 CSV", data=df_logs.to_csv(index=False).encode("utf-8-sig"),
+                           file_name=os.path.basename(csv_path), mime="text/csv")
+
+    # --------- 🏆 排行榜 ---------
+    elif nav == "🏆 排行榜":
+        st.subheader("排行榜")
+        st.dataframe(total_points(df_logs), use_container_width=True)
+
+if __name__ == "__main__":
+    main()

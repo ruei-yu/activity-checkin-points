@@ -158,141 +158,51 @@ def main():
         ["🔳 產生 QR", "📝 現場報到", "👤 個人明細", "🏆 排行榜", "📒 完整紀錄"]
     )
 
-    # ========== 1) 產生 QR ==========
+     # ========== 1) 產生 QR ==========
     with tab_qr:
-        st.subheader("產生活動用 / 個人用 QR")
+        st.subheader("產生活動 QR")
         st.markdown("先填入你的 App 網址（如：`https://你的子網域.streamlit.app`）")
 
         base_url = st.text_input("App 網址", placeholder="https://your-app.streamlit.app")
 
         # 共用活動資訊
-        st.markdown("#### 🗓 共用活動資訊（寫入 QR 參數）")
+        st.markdown("#### 🗓 活動資訊（寫入 QR 參數）")
         col_ed, col_et = st.columns(2)
         with col_ed:
             edate = st.date_input("活動日期", value=None, format="YYYY-MM-DD")
         with col_et:
             etitle = st.text_input("活動名稱", placeholder="例如：中秋志工服務日")
 
-        colA, colB = st.columns(2)
-        with colA:
-            st.markdown("#### A. 通用活動 QR（固定類別）")
-            category_a = st.selectbox("選擇類別（固定在 QR 中）", list(CATEGORY_POINTS.keys()), key="qr_cat_a")
-            go_detail_a = st.checkbox("報到後自動顯示個人明細", value=True, key="qr_detail_a")
-            if st.button("產生通用活動 QR"):
-                if not base_url.strip():
-                    st.warning("請先輸入 App 網址")
-                else:
-                    params = {"mode": "checkin", "category": category_a}
-                    if edate:  params["edate"]  = str(edate)
-                    if etitle: params["etitle"] = etitle.strip()
-                    if go_detail_a:
-                        params["go_detail"] = "1"
-                    url = build_url(base_url.strip(), params)
-                    buf = make_qr_image(url)
-                    st.image(buf, caption=url, use_container_width=False)
-                    st.code(url, language="text")
+        st.markdown("#### 通用活動 QR（所有參加者共用）")
+        category_a = st.selectbox("選擇活動類別", list(CATEGORY_POINTS.keys()), key="qr_cat_a")
+        go_detail_a = st.checkbox("報到後自動顯示個人明細", value=True, key="qr_detail_a")
 
-        with colB:
-            st.markdown("#### B. 個人快速 QR（鎖定姓名＋類別）")
-            name_b = st.text_input("姓名（將寫死在 QR 中）", key="qr_name_b")
-            category_b = st.selectbox("選擇類別（固定在 QR 中）", list(CATEGORY_POINTS.keys()), key="qr_cat_b")
-            go_detail_b = st.checkbox("報到後自動顯示個人明細", value=True, key="qr_detail_b")
-            if st.button("產生個人快速 QR（鎖定輸入）"):
-                if not base_url.strip():
-                    st.warning("請先輸入 App 網址")
-                elif not name_b.strip():
-                    st.warning("請輸入姓名")
-                else:
-                    params = {
-                        "mode": "checkin",
-                        "name": name_b.strip(),
-                        "category": category_b,
-                        "lock": "1"   # 鎖定姓名/類別不可改
-                    }
-                    if edate:  params["edate"]  = str(edate)
-                    if etitle: params["etitle"] = etitle.strip()
-                    if go_detail_b:
-                        params["go_detail"] = "1"
-                    url = build_url(base_url.strip(), params)
-                    buf = make_qr_image(url)
-                    st.image(buf, caption=url, use_container_width=False)
-                    st.code(url, language="text")
+        if st.button("產生活動 QR"):
+            if not base_url.strip():
+                st.warning("請先輸入 App 網址")
+            else:
+                params = {"mode": "checkin", "category": category_a}
+                if edate:  params["edate"]  = str(edate)
+                if etitle: params["etitle"] = etitle.strip()
+                if go_detail_a: params["go_detail"] = "1"
+                url = build_url(base_url.strip(), params)
+                buf = make_qr_image(url)
+                st.image(buf, caption=url, use_container_width=False)
+                st.code(url, language="text")
 
-       
-
-    # ========== 2) 現場報到（支援 URL 參數帶入） ==========
-    with tab_checkin:
-    st.subheader("現場報到")
-
-    # 如果是 auto 模式，直接寫入，不顯示表單
-    if q_auto == "1" and q_name and q_category:
-        pts = CATEGORY_POINTS.get(q_category, 0)
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        row = {
-            "時間": now_str,
-            "姓名": q_name.strip(),
-            "類別": q_category,
-            "獲得點數": pts,
-            "備註": q_note.strip(),
-            "活動日期": (q_event_date or "").strip(),
-            "活動名稱": (q_event_title or "").strip(),
-        }
-        try:
-            write_log(row, gsheet_context=gctx)
-            _, df_logs, _ = get_storage_and_logs()
-            st.success(f"✅ {q_name} 已自動報到成功！本次「{q_category}」+{pts} 點"
-                       + (f"｜{row['活動日期']} {row['活動名稱']}" if row['活動日期'] or row['活動名稱'] else ""))
-
-            # 顯示個人累積
-            df_total = total_points_by_name(df_logs)
-            tp = int(df_total.loc[df_total["姓名"] == q_name.strip(), "總點數"].sum())
-            st.info(f"👤 {q_name} 累積點數：**{tp}**")
-            st.caption(reward_text(tp))
-            st.caption(next_reward_hint(tp))
-
-            his = df_logs[df_logs["姓名"] == q_name.strip()].copy()
-            if not his.empty:
-                st.write("個人紀錄（新→舊）：")
-                st.dataframe(his.sort_values("時間", ascending=False), use_container_width=True)
-        except Exception as e:
-            st.error(f"自動報到失敗：{e}")
-
-    else:
-        # 原本的表單流程保留
-        lock_inputs = (q_lock == "1")
-        with st.form("checkin"):
-            name = st.text_input("姓名", value=q_name, placeholder="請輸入姓名", disabled=lock_inputs)
-            category = st.selectbox("活動類別", list(CATEGORY_POINTS.keys()),
-                                    index=(list(CATEGORY_POINTS.keys()).index(q_category) if q_category in CATEGORY_POINTS else 0),
-                                    disabled=lock_inputs)
-            col1, col2 = st.columns(2)
-            with col1:
-                event_date = st.text_input("活動日期（YYYY-MM-DD）", value=q_event_date)
-            with col2:
-                event_title = st.text_input("活動名稱", value=q_event_title)
-            note = st.text_input("備註（可留空）", value=q_note, placeholder="例：帶朋友參與志工活動")
-            submitted = st.form_submit_button("報到並加點")
-
-        if submitted:
-            # ... 原本的寫入程式碼 ...
-
-                    # 即時顯示個人累積與明細
-                    df_total = total_points_by_name(df_logs)
-                    tp = int(df_total.loc[df_total["姓名"] == name.strip(), "總點數"].sum())
-                    st.info(f"👤 {name} 累積點數：**{tp}**")
-                    st.caption(reward_text(tp))
-                    st.caption(next_reward_hint(tp))
-
-                    his = df_logs[df_logs["姓名"] == name.strip()].copy()
-                    if not his.empty:
-                        st.write("個人紀錄（新→舊）：")
-                        st.dataframe(his.sort_values("時間", ascending=False), use_container_width=True)
-
-                    # 若 URL 有 go_detail=1，提示可看個人明細
-                    if q_go_detail_after == "1":
-                        st.info("下方『個人明細』分頁可查看完整紀錄。也可用 C 欄的 QR 直達。")
-                except Exception as e:
-                    st.error(f"寫入失敗：{e}")
+        st.divider()
+        st.markdown("#### 個人明細 QR")
+        name_c = st.text_input("姓名（掃描直接查看個人累積明細）", key="qr_name_c")
+        if st.button("產生個人明細 QR"):
+            if not base_url.strip():
+                st.warning("請先輸入 App 網址")
+            elif not name_c.strip():
+                st.warning("請輸入姓名")
+            else:
+                url = build_url(base_url.strip(), {"mode": "detail", "name": name_c.strip()})
+                buf = make_qr_image(url)
+                st.image(buf, caption=url, use_container_width=False)
+                st.code(url, language="text")
 
     # ========== 3) 個人明細（支援 URL 直達 + 日期篩選，結束日含當天） ==========
     with tab_lookup:

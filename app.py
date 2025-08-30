@@ -217,19 +217,7 @@ def main():
                     st.image(buf, caption=url, use_container_width=False)
                     st.code(url, language="text")
 
-        st.divider()
-        st.markdown("#### C. 個人明細 QR")
-        name_c = st.text_input("姓名（掃描直接查看個人累積明細）", key="qr_name_c")
-        if st.button("產生個人明細 QR"):
-            if not base_url.strip():
-                st.warning("請先輸入 App 網址")
-            elif not name_c.strip():
-                st.warning("請輸入姓名")
-            else:
-                url = build_url(base_url.strip(), {"mode": "detail", "name": name_c.strip()})
-                buf = make_qr_image(url)
-                st.image(buf, caption=url, use_container_width=False)
-                st.code(url, language="text")
+       
 
     # ========== 2) 現場報到（支援 URL 參數帶入） ==========
     with tab_checkin:

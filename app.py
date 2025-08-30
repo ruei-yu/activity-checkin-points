@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 
 # =========================
@@ -42,32 +42,42 @@ def get_gsheet_df():
     gc = gspread.authorize(credentials)
     sh = gc.open_by_url(sheet_url)
 
-    # 確保有 "logs" 工作表
+    # 確保有 "logs" 工作表（含活動欄位）
     try:
         ws = sh.worksheet("logs")
     except Exception:
-        ws = sh.add_worksheet(title="logs", rows=1000, cols=6)
-        ws.append_row(["時間", "姓名", "類別", "獲得點數", "備註"])
+        ws = sh.add_worksheet(title="logs", rows=1000, cols=8)
+        ws.append_row(["時間", "姓名", "類別", "獲得點數", "備註", "活動日期", "活動名稱"])
 
     rows = ws.get_all_records()
     df = pd.DataFrame(rows)
     if df.empty:
-        df = pd.DataFrame(columns=["時間", "姓名", "類別", "獲得點數", "備註"])
+        df = pd.DataFrame(columns=["時間", "姓名", "類別", "獲得點數", "備註", "活動日期", "活動名稱"])
+    # 舊表補欄
+    for col in ["活動日期", "活動名稱"]:
+        if col not in df.columns:
+            df[col] = ""
     return sh, ws, df
 
 def append_gsheet_row(ws, row_dict):
-    ws.append_row([row_dict.get(k, "") for k in ["時間","姓名","類別","獲得點數","備註"]])
+    ws.append_row([row_dict.get(k, "") for k in
+                   ["時間","姓名","類別","獲得點數","備註","活動日期","活動名稱"]])
 
 # =========================
 # CSV 資料層
 # =========================
 def ensure_csv():
     if not os.path.exists(LOG_CSV):
-        pd.DataFrame(columns=["時間", "姓名", "類別", "獲得點數", "備註"]).to_csv(LOG_CSV, index=False)
+        pd.DataFrame(columns=["時間", "姓名", "類別", "獲得點數", "備註", "活動日期", "活動名稱"]).to_csv(LOG_CSV, index=False)
 
 def read_logs_csv():
     ensure_csv()
-    return pd.read_csv(LOG_CSV)
+    df = pd.read_csv(LOG_CSV)
+    # 舊檔補欄
+    for col in ["活動日期", "活動名稱"]:
+        if col not in df.columns:
+            df[col] = ""
+    return df
 
 def append_log_csv(log_row):
     df = read_logs_csv()
@@ -139,6 +149,9 @@ def main():
     q_note = qp.get("note", "")
     q_lock = qp.get("lock", "")        # "1" 表示鎖定（不可更改姓名/類別）
     q_go_detail_after = qp.get("go_detail", "")  # "1"：報到後顯示個人明細
+    # 新增活動資訊參數
+    q_event_date = qp.get("edate", "")     # YYYY-MM-DD
+    q_event_title = qp.get("etitle", "")   # 活動名稱
 
     tab_qr, tab_checkin, tab_lookup, tab_board, tab_logs = st.tabs(
         ["🔳 產生 QR", "📝 現場報到", "👤 個人明細", "🏆 排行榜", "📒 完整紀錄"]
@@ -151,6 +164,14 @@ def main():
 
         base_url = st.text_input("App 網址", placeholder="https://your-app.streamlit.app")
 
+        # 共用活動資訊
+        st.markdown("#### 🗓 共用活動資訊（寫入 QR 參數）")
+        col_ed, col_et = st.columns(2)
+        with col_ed:
+            edate = st.date_input("活動日期", value=None, format="YYYY-MM-DD")
+        with col_et:
+            etitle = st.text_input("活動名稱", placeholder="例如：中秋志工服務日")
+
         colA, colB = st.columns(2)
         with colA:
             st.markdown("#### A. 通用活動 QR（固定類別）")
@@ -161,6 +182,8 @@ def main():
                     st.warning("請先輸入 App 網址")
                 else:
                     params = {"mode": "checkin", "category": category_a}
+                    if edate:  params["edate"]  = str(edate)
+                    if etitle: params["etitle"] = etitle.strip()
                     if go_detail_a:
                         params["go_detail"] = "1"
                     url = build_url(base_url.strip(), params)
@@ -185,6 +208,8 @@ def main():
                         "category": category_b,
                         "lock": "1"   # 鎖定姓名/類別不可改
                     }
+                    if edate:  params["edate"]  = str(edate)
+                    if etitle: params["etitle"] = etitle.strip()
                     if go_detail_b:
                         params["go_detail"] = "1"
                     url = build_url(base_url.strip(), params)
@@ -209,7 +234,7 @@ def main():
     # ========== 2) 現場報到（支援 URL 參數帶入） ==========
     with tab_checkin:
         st.subheader("現場報到")
-        # 若有 lock=1，則將欄位 disable
+        # 若有 lock=1，則將欄位 disable（僅姓名/類別）
         lock_inputs = (q_lock == "1")
 
         with st.form("checkin"):
@@ -217,6 +242,13 @@ def main():
             category = st.selectbox("活動類別", list(CATEGORY_POINTS.keys()),
                                     index=(list(CATEGORY_POINTS.keys()).index(q_category) if q_category in CATEGORY_POINTS else 0),
                                     disabled=lock_inputs)
+            # 新增：活動日期＆活動名稱（預設帶 URL 值）
+            col1, col2 = st.columns(2)
+            with col1:
+                event_date = st.text_input("活動日期（YYYY-MM-DD）", value=q_event_date)
+            with col2:
+                event_title = st.text_input("活動名稱", value=q_event_title)
+
             note = st.text_input("備註（可留空）", value=q_note, placeholder="例：帶朋友參與志工活動")
             submitted = st.form_submit_button("報到並加點")
 
@@ -232,12 +264,15 @@ def main():
                     "類別": category,
                     "獲得點數": pts,
                     "備註": note.strip(),
+                    "活動日期": (event_date or "").strip(),
+                    "活動名稱": (event_title or "").strip(),
                 }
                 try:
                     write_log(row, gsheet_context=gctx)
                     # 重新讀資料
                     _, df_logs, _ = get_storage_and_logs()
-                    st.success(f"✅ {name} 報到完成！本次「{category}」+{pts} 點")
+                    st.success(f"✅ {name} 報到完成！本次「{category}」+{pts} 點"
+                               + (f"｜{row['活動日期']} {row['活動名稱']}" if row["活動日期"] or row["活動名稱"] else ""))
 
                     # 即時顯示個人累積與明細
                     df_total = total_points_by_name(df_logs)
@@ -251,14 +286,13 @@ def main():
                         st.write("個人紀錄（新→舊）：")
                         st.dataframe(his.sort_values("時間", ascending=False), use_container_width=True)
 
-                    # 若 URL 有 go_detail=1，直接切到個人明細頁籤
+                    # 若 URL 有 go_detail=1，提示可看個人明細
                     if q_go_detail_after == "1":
-                        st.switch_page("")  # 保持同頁，僅用提示
                         st.info("下方『個人明細』分頁可查看完整紀錄。也可用 C 欄的 QR 直達。")
                 except Exception as e:
                     st.error(f"寫入失敗：{e}")
 
-    # ========== 3) 個人明細（支援 URL 直達 + 日期篩選） ==========
+    # ========== 3) 個人明細（支援 URL 直達 + 日期篩選，結束日含當天） ==========
     with tab_lookup:
         st.subheader("個人明細")
         df_total = total_points_by_name(df_logs)
@@ -268,23 +302,27 @@ def main():
         query_name = st.text_input("查詢姓名", value=qn_default, placeholder="輸入姓名查看累積點數")
 
         if query_name.strip():
+            # 轉換時間欄位為 datetime
+            df_logs["_時間_dt"] = pd.to_datetime(df_logs["時間"], errors="coerce")
+
             # 日期篩選區
             st.markdown("### 📅 日期篩選")
             col1, col2 = st.columns(2)
             with col1:
                 start_date = st.date_input("起始日期", value=None)
             with col2:
-                end_date = st.date_input("結束日期", value=None)
+                end_date = st.date_input("結束日期（含當天）", value=None)
 
             # 個人紀錄
             his = df_logs[df_logs["姓名"] == query_name.strip()].copy()
 
-            # 如果有選日期，篩選範圍
+            # 篩選（end_date 含當天：< end_date + 1 天）
             if start_date:
-                his = his[his["時間"] >= str(start_date)]
+                his = his[his["_時間_dt"] >= pd.to_datetime(start_date)]
             if end_date:
-                his = his[his["時間"] <= str(end_date)]
+                his = his[his["_時間_dt"] < (pd.to_datetime(end_date) + timedelta(days=1))]
 
+            # 小計（以篩選後為準）
             tp = int(his["獲得點數"].sum()) if not his.empty else 0
             st.info(f"👤 {query_name} 篩選後累積點數：**{tp}**")
             st.caption(reward_text(tp))
@@ -292,7 +330,8 @@ def main():
 
             if not his.empty:
                 st.write("個人紀錄（新→舊）：")
-                st.dataframe(his.sort_values("時間", ascending=False), use_container_width=True)
+                st.dataframe(his.drop(columns=["_時間_dt"]).sort_values("時間", ascending=False),
+                             use_container_width=True)
             else:
                 st.write("該日期區間沒有紀錄")
 

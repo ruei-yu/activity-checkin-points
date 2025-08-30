@@ -143,6 +143,7 @@ def main():
 
     # 讀取 URL 參數（新版 API）
     qp = st.query_params
+    q_auto = qp.get("auto", "")   # "1" → 啟動自動報到
     mode = qp.get("mode", "")          # "checkin" / "detail" / ""
     q_name = qp.get("name", "")
     q_category = qp.get("category", "")  # "志工" / "美食" / "中華文化"
@@ -221,46 +222,59 @@ def main():
 
     # ========== 2) 現場報到（支援 URL 參數帶入） ==========
     with tab_checkin:
-        st.subheader("現場報到")
-        # 若有 lock=1，則將欄位 disable（僅姓名/類別）
-        lock_inputs = (q_lock == "1")
+    st.subheader("現場報到")
 
+    # 如果是 auto 模式，直接寫入，不顯示表單
+    if q_auto == "1" and q_name and q_category:
+        pts = CATEGORY_POINTS.get(q_category, 0)
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        row = {
+            "時間": now_str,
+            "姓名": q_name.strip(),
+            "類別": q_category,
+            "獲得點數": pts,
+            "備註": q_note.strip(),
+            "活動日期": (q_event_date or "").strip(),
+            "活動名稱": (q_event_title or "").strip(),
+        }
+        try:
+            write_log(row, gsheet_context=gctx)
+            _, df_logs, _ = get_storage_and_logs()
+            st.success(f"✅ {q_name} 已自動報到成功！本次「{q_category}」+{pts} 點"
+                       + (f"｜{row['活動日期']} {row['活動名稱']}" if row['活動日期'] or row['活動名稱'] else ""))
+
+            # 顯示個人累積
+            df_total = total_points_by_name(df_logs)
+            tp = int(df_total.loc[df_total["姓名"] == q_name.strip(), "總點數"].sum())
+            st.info(f"👤 {q_name} 累積點數：**{tp}**")
+            st.caption(reward_text(tp))
+            st.caption(next_reward_hint(tp))
+
+            his = df_logs[df_logs["姓名"] == q_name.strip()].copy()
+            if not his.empty:
+                st.write("個人紀錄（新→舊）：")
+                st.dataframe(his.sort_values("時間", ascending=False), use_container_width=True)
+        except Exception as e:
+            st.error(f"自動報到失敗：{e}")
+
+    else:
+        # 原本的表單流程保留
+        lock_inputs = (q_lock == "1")
         with st.form("checkin"):
             name = st.text_input("姓名", value=q_name, placeholder="請輸入姓名", disabled=lock_inputs)
             category = st.selectbox("活動類別", list(CATEGORY_POINTS.keys()),
                                     index=(list(CATEGORY_POINTS.keys()).index(q_category) if q_category in CATEGORY_POINTS else 0),
                                     disabled=lock_inputs)
-            # 新增：活動日期＆活動名稱（預設帶 URL 值）
             col1, col2 = st.columns(2)
             with col1:
                 event_date = st.text_input("活動日期（YYYY-MM-DD）", value=q_event_date)
             with col2:
                 event_title = st.text_input("活動名稱", value=q_event_title)
-
             note = st.text_input("備註（可留空）", value=q_note, placeholder="例：帶朋友參與志工活動")
             submitted = st.form_submit_button("報到並加點")
 
         if submitted:
-            if not name.strip():
-                st.warning("請輸入姓名")
-            else:
-                pts = CATEGORY_POINTS[category]
-                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                row = {
-                    "時間": now_str,
-                    "姓名": name.strip(),
-                    "類別": category,
-                    "獲得點數": pts,
-                    "備註": note.strip(),
-                    "活動日期": (event_date or "").strip(),
-                    "活動名稱": (event_title or "").strip(),
-                }
-                try:
-                    write_log(row, gsheet_context=gctx)
-                    # 重新讀資料
-                    _, df_logs, _ = get_storage_and_logs()
-                    st.success(f"✅ {name} 報到完成！本次「{category}」+{pts} 點"
-                               + (f"｜{row['活動日期']} {row['活動名稱']}" if row["活動日期"] or row["活動名稱"] else ""))
+            # ... 原本的寫入程式碼 ...
 
                     # 即時顯示個人累積與明細
                     df_total = total_points_by_name(df_logs)

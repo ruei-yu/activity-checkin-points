@@ -116,7 +116,7 @@ def next_hint(points: int, rewards: list) -> str:
 
 # ============== App ==============
 def main():
-    st.set_page_config(page_title="活動參與集點", page_icon="🔢", layout="wide")
+    st.set_page_config(page_title="參與活動集點", page_icon="🔢", layout="wide")
 
     # 左側設定面板（可拉開）
     st.sidebar.title("⚙️ 設定")

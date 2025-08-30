@@ -158,7 +158,7 @@ def main():
     df_logs = load_logs(csv_path)
 
     # 主頁頂部導覽（主控分頁）
-    st.markdown("<h1 style='margin-bottom:4px'> 🔢活動參與集點 </h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='margin-bottom:4px'> 🔢參與活動集點 </h1>", unsafe_allow_html=True)
     nav = st.radio(
         "頁面導覽",
         ["📱 產生 QRcode", "📝 現場報到", "📅 依日期查看參與者", "👤 個人明細", "📒 完整記錄", "🏆 排行榜"],

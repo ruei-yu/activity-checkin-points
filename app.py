@@ -131,10 +131,6 @@ def main():
 
     storage_type, df_logs, gctx = get_storage_and_logs()
 
-    with st.expander("🔧 系統資訊", expanded=False):
-        st.write(f"儲存方式：**{storage_type}**")
-        st.write("雲端部署建議使用 Google Sheets 以避免容器重啟造成 CSV 遺失。")
-
     # 讀取 URL 參數（新版 API）
     qp = st.query_params
     mode = qp.get("mode", "")          # "checkin" / "detail" / ""
@@ -262,7 +258,7 @@ def main():
                 except Exception as e:
                     st.error(f"寫入失敗：{e}")
 
-    # ========== 3) 個人明細（支援 URL 直達） ==========
+    # ========== 3) 個人明細（支援 URL 直達 + 日期篩選） ==========
     with tab_lookup:
         st.subheader("個人明細")
         df_total = total_points_by_name(df_logs)
@@ -272,17 +268,33 @@ def main():
         query_name = st.text_input("查詢姓名", value=qn_default, placeholder="輸入姓名查看累積點數")
 
         if query_name.strip():
-            tp = int(df_total.loc[df_total["姓名"] == query_name.strip(), "總點數"].sum())
-            st.info(f"👤 {query_name} 累積點數：**{tp}**")
+            # 日期篩選區
+            st.markdown("### 📅 日期篩選")
+            col1, col2 = st.columns(2)
+            with col1:
+                start_date = st.date_input("起始日期", value=None)
+            with col2:
+                end_date = st.date_input("結束日期", value=None)
+
+            # 個人紀錄
+            his = df_logs[df_logs["姓名"] == query_name.strip()].copy()
+
+            # 如果有選日期，篩選範圍
+            if start_date:
+                his = his[his["時間"] >= str(start_date)]
+            if end_date:
+                his = his[his["時間"] <= str(end_date)]
+
+            tp = int(his["獲得點數"].sum()) if not his.empty else 0
+            st.info(f"👤 {query_name} 篩選後累積點數：**{tp}**")
             st.caption(reward_text(tp))
             st.caption(next_reward_hint(tp))
 
-            his = df_logs[df_logs["姓名"] == query_name.strip()].copy()
             if not his.empty:
                 st.write("個人紀錄（新→舊）：")
                 st.dataframe(his.sort_values("時間", ascending=False), use_container_width=True)
             else:
-                st.write("尚無紀錄")
+                st.write("該日期區間沒有紀錄")
 
     # ========== 4) 排行榜 ==========
     with tab_board:
